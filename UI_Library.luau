@@ -221,20 +221,20 @@ function Library:CreateWindow(args)
 		)
 	end
 
-	local function updateWindowPosition(inputPosition)
-		local currentInputPosition = Vector2.new(inputPosition.X, inputPosition.Y)
-		local offset = currentInputPosition - dragStartInputPosition
-		local targetCenter = getClampedWindowCenter(dragStartPosition + offset)
+    local function updateWindowPosition(inputPosition)
+        local currentInputPosition = Vector2.new(inputPosition.X, inputPosition.Y)
+        local offset = currentInputPosition - dragStartInputPosition
+        local targetCenter = getClampedWindowCenter(dragStartPosition + offset)
 
-		if dragTween then
-			dragTween:Cancel()
-		end
+        if dragTween then
+            dragTween:Cancel()
+        end
 
-		dragTween = TweenService:Create(window.MainFrame, {
-			Position = UDim2.fromOffset(targetCenter.X, targetCenter.Y)
-		}, dragTweenInfo)
-		dragTween:Play()
-	end
+        dragTween = TweenService:Create(window.MainFrame, dragTweenInfo, {
+            Position = UDim2.fromOffset(targetCenter.X, targetCenter.Y)
+        })
+        dragTween:Play()
+    end
 
 	UserInputService.InputBegan:Connect(function(input)
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1
