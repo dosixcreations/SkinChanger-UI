@@ -236,11 +236,23 @@ function Library:CreateWindow(args)
 		dragTween:Play()
 	end
 
-	window.DragHandle.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch then
+	UserInputService.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1
+			and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+
+		local inputPosition = Vector2.new(input.Position.X, input.Position.Y)
+		local framePosition = window.MainFrame.AbsolutePosition
+		local frameSize = window.MainFrame.AbsoluteSize
+		local insideFrame = inputPosition.X >= framePosition.X
+			and inputPosition.X <= framePosition.X + frameSize.X
+			and inputPosition.Y >= framePosition.Y
+			and inputPosition.Y <= framePosition.Y + frameSize.Y
+
+		if insideFrame then
 			dragging = true
-			dragStartInputPosition = Vector2.new(input.Position.X, input.Position.Y)
+			dragStartInputPosition = inputPosition
 			dragStartPosition = window.MainFrame.AbsolutePosition + (window.MainFrame.AbsoluteSize / 2)
 		end
 	end)
