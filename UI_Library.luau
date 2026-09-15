@@ -222,7 +222,8 @@ function Library:CreateWindow(args)
 	end
 
 	local function updateWindowPosition(inputPosition)
-		local offset = inputPosition - dragStartInputPosition
+		local currentInputPosition = Vector2.new(inputPosition.X, inputPosition.Y)
+		local offset = currentInputPosition - dragStartInputPosition
 		local targetCenter = getClampedWindowCenter(dragStartPosition + offset)
 
 		if dragTween then
@@ -239,7 +240,7 @@ function Library:CreateWindow(args)
 		if input.UserInputType == Enum.UserInputType.MouseButton1
 			or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
-			dragStartInputPosition = input.Position
+			dragStartInputPosition = Vector2.new(input.Position.X, input.Position.Y)
 			dragStartPosition = window.MainFrame.AbsolutePosition + (window.MainFrame.AbsoluteSize / 2)
 		end
 	end)
@@ -354,12 +355,16 @@ function Library:CreateWindow(args)
 		args = args or {}
 		local name = args.Name or "Tab"
 		local subTabs = args.SubTabs or {"1", "2"}
+		local oneSkin = args.OneSkin == true
 		
 		local tab = {}
 
 		tab.Open = false
+		tab.OneSkin = oneSkin
 		tab.Tabs = {}
 		tab._subTabOrder = {}
+		tab.SelectedSkin = nil
+		tab.SelectedSkinSubTab = nil
 		
 		tab.Tab = Instance.new("TextButton")
 		tab.Tab.Name = "Tab"
@@ -665,14 +670,26 @@ function Library:CreateWindow(args)
 				end)
 				
 				Skin.SkinTemplate.MouseButton1Click:Connect(function()
-					if subTab.SelectedSkin and subTab.SelectedSkin ~= Skin then
-						subTab.SelectedSkin.Selected = false
-						window:_Tween(subTab.SelectedSkin.SkinTemplate, {
-							BackgroundTransparency = subTab.SelectedSkin.Hovered and 0.78 or 1
+					local previousSkin = tab.OneSkin and tab.SelectedSkin or subTab.SelectedSkin
+
+					if previousSkin and previousSkin ~= Skin then
+						previousSkin.Selected = false
+						window:_Tween(previousSkin.SkinTemplate, {
+							BackgroundTransparency = previousSkin.Hovered and 0.78 or 1
 						})
 					end
 
-					subTab.SelectedSkin = Skin
+					if tab.OneSkin then
+						if tab.SelectedSkinSubTab and tab.SelectedSkinSubTab ~= subTab then
+							tab.SelectedSkinSubTab.SelectedSkin = nil
+						end
+
+						tab.SelectedSkin = Skin
+						tab.SelectedSkinSubTab = subTab
+					else
+						subTab.SelectedSkin = Skin
+					end
+
 					Skin.Selected = true
 					animateSkin(0.45, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out))
 
