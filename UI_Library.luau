@@ -785,6 +785,8 @@ function Library:CreateWindow(args)
 			SkinHolder.Name = "SkinHolder"
 			SkinHolder.Visible = false
 			SkinHolder.BorderSizePixel = 0
+			SkinHolder.ScrollingDirection = Enum.ScrollingDirection.Y
+			SkinHolder.AutomaticCanvasSize = Enum.AutomaticSize.Y
 			SkinHolder.CanvasSize = UDim2.new(0.00, 0.00, 0.00, 0.00)
 			SkinHolder.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
 			SkinHolder.Size = UDim2.new(1.00, 10.00, 1.00, -40.00)
