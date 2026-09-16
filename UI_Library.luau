@@ -848,12 +848,11 @@ function Library:CreateWindow(args)
 				local _Rarity = args.Rarity or "Stock"
 				local _Callback = args.Callback or function() end
 
-				local RarityColor
+				local RarityColor = Color3.fromRGB(195, 195, 195)
 				for _, v in ipairs(Library.RarityColors) do
 					if v.Name == _Rarity then
 						RarityColor = v.Color
-					else
-						RarityColor = Color3.fromRGB(195, 195, 195)
+						break
 					end
 				end
 
