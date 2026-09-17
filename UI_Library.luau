@@ -16,6 +16,9 @@ local Library = {
 	},
 	
 	Fonts = {},
+	Flags = {},
+    FlagRegistry = {},
+	ConfigsList = {},
 	
 	RarityColors = {
 		{ Name = "Stock",     Color = Color3.fromRGB(195, 195, 195) },
@@ -33,17 +36,26 @@ local Library = {
 		SkinGlow = "https://raw.githubusercontent.com/dosixcreations/SkinChanger-UI/main/Ellipse%2041.png",
 		SkinUnderline = "https://raw.githubusercontent.com/dosixcreations/SkinChanger-UI/main/Rectangle%2086.png",
 		ThreeDots = "https://raw.githubusercontent.com/dosixcreations/SkinChanger-UI/main/Group%2035.png",
-		BackgroundGlow = "https://raw.githubusercontent.com/dosixcreations/SkinChanger-UI/main/Frame%2024.png"
+		BackgroundGlow = "https://raw.githubusercontent.com/dosixcreations/SkinChanger-UI/main/Frame%2024.png",
+		ConfigBackgroundGlow = "https://raw.githubusercontent.com/dosixcreations/SkinChanger-UI/main/Frame%2026.png",
+		ConfigIcon = "https://raw.githubusercontent.com/dosixcreations/SkinChanger-UI/main/setting%20(2).png",
 	},
 	
 	Folders = {
 		"PypsCC_SkinChanger",
 		"PypsCC_SkinChanger/Assets",
-		"PypsCC_SkinChanger/Fonts"
+		"PypsCC_SkinChanger/Fonts",
+		"PypsCC_SkinChanger/Configs",
 	},
 	
+	AutoLoadFile = "PypsCC_SkinChanger/autoload.txt",
 	Keybind = Enum.KeyCode.RightShift,
 }
+
+--// Folders bootstrap
+for _, folder in ipairs(Library.Folders) do
+    if not isfolder(folder) then makefolder(folder) end
+end
 
 --// Assets
 for i, v in pairs(Library.Images) do
@@ -85,6 +97,116 @@ function Library:LoadFont(FontName, Weight, Link)
 
 	Library.Fonts[FontName][Weight] = fontObject
 	return fontObject
+end
+
+--// Flags
+function Library:RegisterFlag(flag, setter)
+    self.FlagRegistry[flag] = setter
+end
+
+function Library:UnregisterFlag(flag)
+    self.FlagRegistry[flag] = nil
+    self.Flags[flag] = nil
+end
+
+--// Config
+function Library:SaveConfig(name)
+    name = name or "default"
+    if not isfolder(Library.Folders[4]) then makefolder(Library.Folders[4]) end
+    local ok, encoded = pcall(function()
+        return HttpService:JSONEncode(self.Flags)
+    end)
+    if not ok then return false, encoded end
+    writefile(Library.Folders[4] .. "/" .. name .. ".json", encoded)
+    return true
+end
+
+function Library:LoadConfig(name)
+    name = name or "default"
+    local path = Library.Folders[4] .. "/" .. name .. ".json"
+    if not isfile(path) then return false, "not found" end
+
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(readfile(path))
+    end)
+    if not ok or type(data) ~= "table" then return false, "corrupt" end
+
+    for flag, setter in pairs(self.FlagRegistry) do
+        if data[flag] == nil then
+            pcall(setter, false)
+        end
+    end
+
+    self.Flags = {}
+    for flag, value in pairs(data) do
+        self.Flags[flag] = value
+        local setter = self.FlagRegistry[flag]
+        if setter then pcall(setter, value) end
+    end
+    return true
+end
+
+function Library:DeleteConfig(name)
+    name = name or "default"
+    local path = Library.Folders[4] .. "/" .. name .. ".json"
+    if not isfile(path) then return false end
+    delfile(path)
+    if self:GetAutoLoad() == name then self:DisableAutoLoad() end
+    return true
+end
+
+--// Auto Load
+function Library:GetAutoLoad()
+    if isfile(self.AutoLoadFile) then
+        local name = readfile(self.AutoLoadFile)
+        if name and #name > 0 then return name end
+    end
+    return nil
+end
+
+function Library:ListConfigs()
+    local list = {}
+    if not isfolder(Library.Folders[4]) then return list end
+
+    local auto = self:GetAutoLoad()
+
+    for _, file in ipairs(listfiles(Library.Folders[4])) do
+        local name = file:match("([^/\\]+)%.json$")
+        if name then
+            table.insert(list, {
+                Name       = name,
+                IsAutoLoad = (name == auto),
+            })
+        end
+    end
+
+    table.sort(list, function(a, b) return a.Name:lower() < b.Name:lower() end)
+    return list
+end
+Library.ConfigsList = Library:ListConfigs()
+
+function Library:SetAutoLoad(name)
+    if name == nil then return self:DisableAutoLoad() end
+    if not isfile(Library.Folders[4] .. "/" .. name .. ".json") then
+        return false, "config doesn't exist"
+    end
+    writefile(self.AutoLoadFile, name)
+    return true
+end
+
+function Library:DisableAutoLoad()
+    if isfile(self.AutoLoadFile) then delfile(self.AutoLoadFile) end
+    return true
+end
+
+function Library:ApplyAutoLoad()
+    local name = self:GetAutoLoad()
+    if name then return self:LoadConfig(name) end
+    return false
+end
+
+function Library:IsAutoLoad(name)
+    return self:GetAutoLoad() == name
 end
 
 --// Font Initialization
@@ -171,13 +293,13 @@ function Library:CreateWindow(args)
 	UICorner_1.Parent = _SearchBar
 	Window.UICorner_1 = UICorner_1
 
-	local UIStroke = Instance.new("UIStroke")
+	--[[local UIStroke = Instance.new("UIStroke")
 	UIStroke.Color = Library.Colors.UIStroke
 	UIStroke.Thickness = 2
 	UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	UIStroke.BorderStrokePosition = Enum.BorderStrokePosition.Inner
 	UIStroke.Parent = _SearchBar
-	Window.UIStroke = UIStroke
+	Window.UIStroke = UIStroke]]
 
 	local TextBox = Instance.new("TextBox")
 	TextBox.TextTruncate = Enum.TextTruncate.SplitWord
@@ -251,7 +373,7 @@ function Library:CreateWindow(args)
 	_TabsHolder.BorderSizePixel = 0
 	_TabsHolder.CanvasSize = UDim2.new(0.00, 0.00, 0.00, 0.00)
 	_TabsHolder.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
-	_TabsHolder.Size = UDim2.new(1.00, 4.00, 1.00, -78.00)
+	_TabsHolder.Size = UDim2.new(1.00, 4.00, 1.00, -138.00)
 	_TabsHolder.ScrollBarImageColor3 = Library.Colors.UIStroke
 	_TabsHolder.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
 	_TabsHolder.ScrollBarThickness = 2
@@ -263,7 +385,96 @@ function Library:CreateWindow(args)
 	local UIPadding_1 = Instance.new("UIPadding")
 	UIPadding_1.PaddingRight = UDim.new(0.00, 4.00)
 	UIPadding_1.Parent = _TabsHolder
-		
+
+	local _Icon = Instance.new("Frame")
+	_Icon.Name = "4Icon"
+	_Icon.Size = UDim2.new(1.00, 0.00, 0.00, 76.00)
+	_Icon.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+	_Icon.BorderSizePixel = 0
+	_Icon.BackgroundTransparency = 1
+	_Icon.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+	_Icon.Parent = LeftBar
+
+	local UIPadding = Instance.new("UIPadding")
+	UIPadding.PaddingBottom = UDim.new(0.00, 20.00)
+	UIPadding.PaddingTop = UDim.new(0.00, 18.00)
+	UIPadding.Parent = _Icon
+
+	local Frame = Instance.new("Frame")
+	Frame.Size = UDim2.new(0.00, 38.00, 0.00, 38.00)
+	Frame.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+	Frame.BorderSizePixel = 0
+	Frame.BackgroundTransparency = 0.5
+	Frame.BackgroundColor3 = Library.Colors.AccentText
+	Frame.Parent = _Icon
+
+	local UICorner = Instance.new("UICorner")
+	UICorner.CornerRadius = UDim.new(1.00, 0.00)
+	UICorner.Parent = Frame
+
+	local UIStroke = Instance.new("UIStroke")
+	UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	UIStroke.BorderStrokePosition = Enum.BorderStrokePosition.Inner
+	UIStroke.Color = Library.Colors.AccentText
+	UIStroke.Thickness = 2
+	UIStroke.Parent = Frame
+
+	local ImageLabel1 = Instance.new("ImageLabel")
+	ImageLabel1.BorderSizePixel = 0
+	ImageLabel1.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+	ImageLabel1.AnchorPoint = Vector2.new(0.50, 0.50)
+	ImageLabel1.Image = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. game:GetService("Players").LocalPlayer.UserId .. "&width=420&height=420&format=png"
+	ImageLabel1.Size = UDim2.new(1.00, -4.00, 1.00, -4.00)
+	ImageLabel1.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+	ImageLabel1.BackgroundTransparency = 1
+	ImageLabel1.Position = UDim2.new(0.50, 0.00, 0.50, 0.00)
+	ImageLabel1.Parent = Frame
+
+	local UICorner_1 = Instance.new("UICorner")
+	UICorner_1.CornerRadius = UDim.new(1.00, 0.00)
+	UICorner_1.Parent = ImageLabel1
+
+	local TextLabel = Instance.new("TextLabel")
+	TextLabel.BorderSizePixel = 0
+	TextLabel.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+	TextLabel.FontFace = gilroyExtraBold
+	TextLabel.TextXAlignment = Enum.TextXAlignment.Left
+	TextLabel.TextSize = 15
+	TextLabel.Size = UDim2.new(1.00, -42.00, 0.00, 19.00)
+	TextLabel.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+	TextLabel.Text = game:GetService("Players").LocalPlayer.Name
+	TextLabel.TextColor3 = Library.Colors.AccentText
+	TextLabel.BackgroundTransparency = 1
+	TextLabel.Position = UDim2.new(0.00, 42.00, 0.00, 0.00)
+	TextLabel.Parent = _Icon
+
+	local UIPadding_1 = Instance.new("UIPadding")
+	UIPadding_1.PaddingTop = UDim.new(0.00, 10.00)
+	UIPadding_1.Parent = TextLabel
+
+	local TextLabel_1 = Instance.new("TextLabel")
+	TextLabel_1.BorderSizePixel = 0
+	TextLabel_1.TextYAlignment = Enum.TextYAlignment.Top
+	TextLabel_1.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+	TextLabel_1.FontFace = gilroySemiBold
+	TextLabel_1.TextXAlignment = Enum.TextXAlignment.Left
+	TextLabel_1.TextSize = 10
+	TextLabel_1.Size = UDim2.new(1.00, -42.00, 0.00, 19.00)
+	TextLabel_1.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+
+	local dateComponents = os.date("!*t")
+	local months = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+	
+	TextLabel_1.Text = dateComponents.day .. " " .. months[dateComponents.month] .. " " .. dateComponents.year
+	TextLabel_1.TextColor3 = Library.Colors.UIStroke
+	TextLabel_1.BackgroundTransparency = 1
+	TextLabel_1.Position = UDim2.new(0.00, 42.00, 0.00, 19.00)
+	TextLabel_1.Parent = _Icon
+
+	local UIPadding_1 = Instance.new("UIPadding")
+	UIPadding_1.PaddingTop = UDim.new(0.00, 2)
+	UIPadding_1.Parent = TextLabel_1
+
 	--// Main Window
 	local SeparatingLine = Instance.new("Frame")
 	SeparatingLine.Name = "SeparatingLine"
@@ -305,135 +516,186 @@ function Library:CreateWindow(args)
 	UIPadding_1.PaddingRight = UDim.new(0.00, 18.00)
 	UIPadding_1.Parent = RIghtSide
 	Window.UIPadding_1 = UIPadding_1
-	
-	local RarityFilter = Instance.new("TextButton")
-	RarityFilter.Name = "RarityFilter"
-	RarityFilter.Size = UDim2.new(0.00, 210.00, 0.00, 38.00)
-	RarityFilter.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
-	RarityFilter.BorderSizePixel = 0
-	RarityFilter.ZIndex = 3
-	RarityFilter.AutoButtonColor = false
-	RarityFilter.Text = ""
-	RarityFilter.BackgroundColor3 = Library.Colors.RightSideBackground
-	RarityFilter.Parent = RIghtSide
-	Window.RarityFilter = RarityFilter
 
-	local UICorner_1 = Instance.new("UICorner")
-	UICorner_1.CornerRadius = UDim.new(0.00, 5.00)
-	UICorner_1.Parent = RarityFilter
-	Window.UICorner_1 = UICorner_1
-
-	local UIStroke_1 = Instance.new("UIStroke")
+	--[[local UIStroke_1 = Instance.new("UIStroke")
 	UIStroke_1.Color = Library.Colors.UIStroke
 	UIStroke_1.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	UIStroke_1.BorderStrokePosition = Enum.BorderStrokePosition.Inner
 	UIStroke_1.Thickness = 2
 	UIStroke_1.Parent = RarityFilter
-	Window.UIStroke_1 = UIStroke_1
+	Window.UIStroke_1 = UIStroke_1]]
 
-	local TextLabel_1 = Instance.new("TextLabel")
-	TextLabel_1.Active = true
-	TextLabel_1.TextTruncate = Enum.TextTruncate.SplitWord
-	TextLabel_1.BorderSizePixel = 0
-	TextLabel_1.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
-	TextLabel_1.FontFace = gilroyExtraBold
-	TextLabel_1.AnchorPoint = Vector2.new(0.50, 1.00)
-	TextLabel_1.TextXAlignment = Enum.TextXAlignment.Left
-	TextLabel_1.TextSize = 17
-	TextLabel_1.Size = UDim2.new(1.00, -40.00, 1.00, -2.00)
-	TextLabel_1.Selectable = true
-	TextLabel_1.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
-	TextLabel_1.Text = "Rarity Filter"
-	TextLabel_1.TextColor3 = Library.Colors.UIStroke
-	TextLabel_1.BackgroundTransparency = 1
-	TextLabel_1.Position = UDim2.new(0.50, 0.00, 1.00, 0.00)
-	TextLabel_1.Parent = RarityFilter
-	Window.TextLabel_1 = TextLabel_1
+	local RarityText = Instance.new("TextLabel")
+	RarityText.Name = "RarityText"
+	RarityText.Active = true
+	RarityText.TextTruncate = Enum.TextTruncate.SplitWord
+	RarityText.ZIndex = 3
+	RarityText.BorderSizePixel = 0
+	RarityText.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+	RarityText.FontFace = gilroySemiBold
+	RarityText.TextXAlignment = Enum.TextXAlignment.Left
+	RarityText.TextSize = 17
+	RarityText.Size = UDim2.new(0.00, 170.00, 0.00, 36.00)
+	RarityText.Selectable = true
+	RarityText.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+	RarityText.Text = "Rarity Filter"
+	RarityText.TextColor3 = Library.Colors.UIStroke
+	RarityText.BackgroundTransparency = 1
+	RarityText.Position = UDim2.new(0.00, 20.00, 0.00, 2.00)
+	RarityText.Parent = RIghtSide
 
-	local UIPadding_1 = Instance.new("UIPadding")
-	UIPadding_1.PaddingTop = UDim.new(0.00, 5.00)
-	UIPadding_1.Parent = TextLabel_1
-	Window.UIPadding_1 = UIPadding_1
+	local UIPadding = Instance.new("UIPadding")
+	UIPadding.PaddingTop = UDim.new(0.00, 5.00)
+	UIPadding.Parent = RarityText
 
-	local OpenIcon_1 = Instance.new("ImageLabel")
-	OpenIcon_1.Name = "OpenIcon"
-	OpenIcon_1.ImageColor3 = Library.Colors.UIStroke
-	OpenIcon_1.BorderSizePixel = 0
-	OpenIcon_1.ScaleType = Enum.ScaleType.Fit
-	OpenIcon_1.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
-	OpenIcon_1.AnchorPoint = Vector2.new(1.00, 0.50)
-	OpenIcon_1.Image = getcustomasset(Library.Folders[2] .. "/" .. "DropDownIcon.png")
-	OpenIcon_1.Size = UDim2.new(0.00, 15.00, 0.00, 11.00)
-	OpenIcon_1.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
-	OpenIcon_1.Rotation = 90
-	OpenIcon_1.BackgroundTransparency = 1
-	OpenIcon_1.Position = UDim2.new(1.00, -18.00, 0.50, 0.00)
-	OpenIcon_1.Parent = RarityFilter
-	Window.OpenIcon_1 = OpenIcon_1
-	
-	--// Open Rarity Tab
-	local Frame = Instance.new("Frame")
-	Frame.ClipsDescendants = true
-	Frame.Visible = true
-	Frame.ClipsDescendants = true
-	Frame.Size = UDim2.new(0.00, 216.00, 0.00, 0)
-	Frame.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
-	Frame.Position = UDim2.new(0.00, -2.00, 0.00, 28.00)
-	Frame.BorderSizePixel = 0
-	Frame.ZIndex = 2
-	Frame.BackgroundColor3 = Library.Colors.DarkBackground
-	Frame.Parent = RIghtSide
-	Window.Frame = Frame
+	local InvisRarityHolder = Instance.new("Frame")
+	InvisRarityHolder.Name = "InvisRarityHolder"
+	InvisRarityHolder.ClipsDescendants = true
+	InvisRarityHolder.Size = UDim2.new(0.00, 214.00, 0.00, 0)
+	InvisRarityHolder.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+	InvisRarityHolder.Position = UDim2.new(0.00, -2.00, 0.00, 0.00)
+	InvisRarityHolder.BorderSizePixel = 0
+	InvisRarityHolder.ZIndex = 3
+	InvisRarityHolder.BackgroundTransparency = 1
+	InvisRarityHolder.BackgroundColor3 = Library.Colors.DarkBackground
+	InvisRarityHolder.Parent = RIghtSide
 
-	local UICorner_1 = Instance.new("UICorner")
-	UICorner_1.CornerRadius = UDim.new(0.00, 5.00)
-	UICorner_1.Parent = Frame
-	Window.UICorner_1 = UICorner_1
-
-	local Frame_1 = Instance.new("Frame")
-	Frame_1.Size = UDim2.new(0.00, 210.00, 0.00, 100.00)
-	Frame_1.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
-	Frame_1.Position = UDim2.new(0.00, 2.00, 0.00, 0.00)
-	Frame_1.BorderSizePixel = 0
-	Frame_1.ZIndex = 2
-	Frame_1.BackgroundColor3 = Library.Colors.RightSideBackground
-	Frame_1.Parent = Frame
-	Window.Frame_1 = Frame_1
-
-	local UICorner_1 = Instance.new("UICorner")
-	UICorner_1.CornerRadius = UDim.new(0.00, 5.00)
-	UICorner_1.Parent = Frame_1
-	Window.UICorner_1 = UICorner_1
+	local InvisRarityFrame = Instance.new("Frame")
+	InvisRarityFrame.Name = "InvisRarityFrame"
+	InvisRarityFrame.AnchorPoint = Vector2.new(0.00, 0.50)
+	InvisRarityFrame.Size = UDim2.new(0.00, 210.00, 1.00, -4.00)
+	InvisRarityFrame.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+	InvisRarityFrame.Position = UDim2.new(0.00, 2.00, 0.50, 0.00)
+	InvisRarityFrame.BorderSizePixel = 0
+	InvisRarityFrame.ZIndex = 2
+	InvisRarityFrame.BackgroundTransparency = 1
+	InvisRarityFrame.BackgroundColor3 = Color3.fromRGB(127, 135, 157)
+	InvisRarityFrame.Parent = InvisRarityHolder
 
 	local UIPadding_1 = Instance.new("UIPadding")
-	UIPadding_1.PaddingBottom = UDim.new(0.00, 10.00)
-	UIPadding_1.PaddingTop = UDim.new(0.00, 12.00)
+	UIPadding_1.PaddingBottom = UDim.new(0.00, 5.00)
+	UIPadding_1.PaddingTop = UDim.new(0.00, 41.00)
 	UIPadding_1.PaddingLeft = UDim.new(0.00, 20.00)
 	UIPadding_1.PaddingRight = UDim.new(0.00, 20.00)
-	UIPadding_1.Parent = Frame_1
-	Window.UIPadding_1 = UIPadding_1
+	UIPadding_1.Parent = InvisRarityFrame
 
-	local ScrollingFrame = Instance.new("ScrollingFrame")
-	ScrollingFrame.Active = true
-	ScrollingFrame.ScrollingDirection = Enum.ScrollingDirection.Y
-	ScrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	ScrollingFrame.BorderSizePixel = 0
-	ScrollingFrame.CanvasSize = UDim2.new(0.00, 2.00, 0.00, 2.00)
-	ScrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	ScrollingFrame.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
-	ScrollingFrame.Size = UDim2.new(1.00, 0.00, 1.00, 0.00)
-	ScrollingFrame.ScrollBarImageColor3 = Library.Colors.UIStroke
-	ScrollingFrame.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
-	ScrollingFrame.ScrollBarThickness = 2
-	ScrollingFrame.BackgroundTransparency = 1
-	ScrollingFrame.Parent = Frame_1
-	Window.ScrollingFrame = ScrollingFrame
+	local InvisRarityContainer = Instance.new("ScrollingFrame")
+	InvisRarityContainer.Name = "InvisRarityContainer"
+	InvisRarityContainer.Active = true
+	InvisRarityContainer.ScrollingDirection = Enum.ScrollingDirection.Y
+	InvisRarityContainer.BorderSizePixel = 0
+	InvisRarityContainer.CanvasSize = UDim2.new(0.00, 2.00, 0.00, 2.00)
+	InvisRarityContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	InvisRarityContainer.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+	InvisRarityContainer.Size = UDim2.new(1.00, 0.00, 1.00, 0.00)
+	InvisRarityContainer.ScrollBarImageColor3 = Library.Colors.UIStroke
+	InvisRarityContainer.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+	InvisRarityContainer.ScrollBarThickness = 2
+	InvisRarityContainer.BackgroundTransparency = 1
+	InvisRarityContainer.Parent = InvisRarityFrame
 
-	local UIListLayout_1 = Instance.new("UIListLayout")
-	UIListLayout_1.SortOrder = Enum.SortOrder.LayoutOrder
-	UIListLayout_1.Parent = ScrollingFrame
-	Window.UIListLayout_1 = UIListLayout_1
-	
+	local UIListLayout = Instance.new("UIListLayout")
+	UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	UIListLayout.Parent = InvisRarityContainer
+
+	local BlackBackground = Instance.new("Frame")
+	BlackBackground.Name = "BlackBackground"
+	BlackBackground.ClipsDescendants = true
+	BlackBackground.Size = UDim2.new(0.00, 214.00, 0.00, 42)
+	BlackBackground.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+	BlackBackground.Position = UDim2.new(0.00, -2.00, 0.00, -2.00)
+	BlackBackground.BorderSizePixel = 0
+	BlackBackground.ZIndex = 2
+	BlackBackground.BackgroundColor3 = Library.Colors.DarkBackground
+	BlackBackground.Parent = RIghtSide
+
+	local UICorner2 = Instance.new("UICorner")
+	UICorner2.CornerRadius = UDim.new(0.00, 5.00)
+	UICorner2.Parent = BlackBackground
+
+	local OpenIcon = Instance.new("ImageLabel")
+	OpenIcon.Name = "OpenIcon"
+	OpenIcon.ImageColor3 = Library.Colors.UIStroke
+	OpenIcon.ZIndex = 4
+	OpenIcon.BorderSizePixel = 0
+	OpenIcon.ScaleType = Enum.ScaleType.Fit
+	OpenIcon.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+	OpenIcon.Image = getcustomasset(Library.Folders[2] .. "/" .. "DropDownIcon.png")
+	OpenIcon.Size = UDim2.new(0.00, 15.00, 0.00, 11.00)
+	OpenIcon.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+	OpenIcon.Rotation = 90
+	OpenIcon.BackgroundTransparency = 1
+	OpenIcon.Position = UDim2.new(0.00, 177.00, 0.00, 13.00)
+	OpenIcon.Parent = RIghtSide
+
+	local InvisRarityFrame_1 = Instance.new("CanvasGroup")
+	InvisRarityFrame_1.Name = "InvisRarityFrame"
+	InvisRarityFrame_1.GroupTransparency = 0.97 -- 0.97
+	InvisRarityFrame_1.ZIndex = 3
+	InvisRarityFrame_1.BorderSizePixel = 0
+	InvisRarityFrame_1.BackgroundColor3 = Color3.fromRGB(127, 135, 157)
+	InvisRarityFrame_1.Size = UDim2.new(0.00, 210.00, 0.00, 130)
+	InvisRarityFrame_1.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+	InvisRarityFrame_1.BackgroundTransparency = 1
+	InvisRarityFrame_1.Parent = RIghtSide
+
+	local RarityFilter = Instance.new("TextButton")
+	RarityFilter.Name = "RarityFilter"
+	RarityFilter.Size = UDim2.new(0.00, 210.00, 0.00, 38.00)
+	RarityFilter.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+	RarityFilter.AutoButtonColor = false
+	RarityFilter.Text = ""
+	RarityFilter.BorderSizePixel = 0
+	RarityFilter.ZIndex = 4
+	RarityFilter.BackgroundColor3 = Color3.fromRGB(127, 135, 157)
+	RarityFilter.Parent = InvisRarityFrame_1
+
+	local UICorner = Instance.new("UICorner")
+	UICorner.CornerRadius = UDim.new(0.00, 5.00)
+	UICorner.Parent = RarityFilter
+
+	local InvisRarityFrame2 = Instance.new("Frame")
+	InvisRarityFrame2.Name = "InvisRarityFrame"
+	InvisRarityFrame2.Size = UDim2.new(0.00, 210.00, 0.00, 38)
+	InvisRarityFrame2.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+	InvisRarityFrame2.BorderSizePixel = 0
+	InvisRarityFrame2.ZIndex = 3
+	InvisRarityFrame2.BackgroundColor3 = Color3.fromRGB(127, 135, 157)
+	InvisRarityFrame2.Parent = InvisRarityFrame_1
+
+	local UICorner = Instance.new("UICorner")
+	UICorner.CornerRadius = UDim.new(0.00, 5.00)
+	UICorner.Parent = InvisRarityFrame2
+
+	--//Config!
+		local ConfigToggle = Instance.new("TextButton")
+	ConfigToggle.Name = "ConfigToggle"
+	ConfigToggle.BorderSizePixel = 0
+	ConfigToggle.AutoButtonColor = false
+	ConfigToggle.BackgroundColor3 = Color3.fromRGB(127, 135, 157)
+	ConfigToggle.AnchorPoint = Vector2.new(1.00, 0.00)
+	ConfigToggle.Size = UDim2.new(0.00, 38.00, 0.00, 38.00)
+	ConfigToggle.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+	ConfigToggle.Text = ""
+	ConfigToggle.BackgroundTransparency = 0.97
+	ConfigToggle.Position = UDim2.new(1.00, 0.00, 0.00, 0.00)
+	ConfigToggle.Parent = RIghtSide
+
+	local UICorner = Instance.new("UICorner")
+	UICorner.Parent = ConfigToggle
+
+	local ImageLabel = Instance.new("ImageLabel")
+	ImageLabel.ImageColor3 = Library.Colors.UIStroke
+	ImageLabel.BorderSizePixel = 0
+	ImageLabel.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+	ImageLabel.AnchorPoint = Vector2.new(0.50, 0.50)
+	ImageLabel.Image = getcustomasset(Library.Folders[2] .. "/" .. "ConfigIcon.png")
+	ImageLabel.Size = UDim2.new(0.00, 25.00, 0.00, 25.00)
+	ImageLabel.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+	ImageLabel.BackgroundTransparency = 1
+	ImageLabel.Position = UDim2.new(0.50, 0.00, 0.50, 0.00)
+	ImageLabel.Parent = ConfigToggle
+
 	for i = 1, #Library.RarityColors do 
 		local RarityButton = Instance.new("TextButton") 
 		local data = Library.RarityColors[i]
@@ -449,7 +711,7 @@ function Library:CreateWindow(args)
 		RarityButton.Text = data.Name
 		RarityButton.BackgroundTransparency = 1
 		RarityButton.TextXAlignment = Enum.TextXAlignment.Left
-		RarityButton.Parent = ScrollingFrame
+		RarityButton.Parent = InvisRarityContainer
 
 		local UIPadding_1 = Instance.new("UIPadding")
 		UIPadding_1.PaddingTop = UDim.new(0.00, 5.00)
@@ -495,22 +757,27 @@ function Library:CreateWindow(args)
 	RarityFilter.MouseButton1Click:Connect(function()
 		Toggled = not Toggled
 		if Toggled then
-			TweenService:Create(OpenIcon_1, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Rotation = 0}):Play()
-			TweenService:Create(Frame, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0.00, 216.00, 0.00, 104.00)}):Play()
+			TweenService:Create(OpenIcon, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Rotation = 0}):Play()
+			TweenService:Create(BlackBackground, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0.00, 214.00, 0.00, 134.00)}):Play()
+			TweenService:Create(InvisRarityHolder, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0.00, 214.00, 0.00, 132.00)}):Play()
+			TweenService:Create(InvisRarityFrame2, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0.00, 210.00, 0.00, 130.00)}):Play()
+
 		else
-			TweenService:Create(OpenIcon_1, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Rotation = 90}):Play()
-			TweenService:Create(Frame, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0.00, 216.00, 0.00, 0)}):Play()
+			TweenService:Create(OpenIcon, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Rotation = 90}):Play()
+			TweenService:Create(BlackBackground, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0.00, 214.00, 0.00, 42.00)}):Play()
+			TweenService:Create(InvisRarityHolder, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0.00, 214.00, 0.00, 0)}):Play()
+			TweenService:Create(InvisRarityFrame2, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0.00, 210.00, 0.00, 38.00)}):Play()
 		end
 	end)
 
 	RarityFilter.MouseEnter:Connect(function()
-		TweenService:Create(TextLabel_1, TweenInfo.new(0.2), {TextColor3 = Library.Colors.HoverText}):Play()
-		TweenService:Create(OpenIcon_1, TweenInfo.new(0.2), {ImageColor3 = Library.Colors.HoverText}):Play()
+		TweenService:Create(RarityText, TweenInfo.new(0.2), {TextColor3 = Library.Colors.HoverText}):Play()
+		TweenService:Create(OpenIcon, TweenInfo.new(0.2), {ImageColor3 = Library.Colors.HoverText}):Play()
 	end)
 
 	RarityFilter.MouseLeave:Connect(function()
-		TweenService:Create(TextLabel_1, TweenInfo.new(0.2), {TextColor3 = Library.Colors.UIStroke}):Play()
-		TweenService:Create(OpenIcon_1, TweenInfo.new(0.2), {ImageColor3 = Library.Colors.UIStroke}):Play()
+		TweenService:Create(RarityText, TweenInfo.new(0.2), {TextColor3 = Library.Colors.UIStroke}):Play()
+		TweenService:Create(OpenIcon, TweenInfo.new(0.2), {ImageColor3 = Library.Colors.UIStroke}):Play()
 	end)
 	
 	function Window:Open()
@@ -603,14 +870,14 @@ function Library:CreateWindow(args)
 		UICorner.Parent = TabContainer
 		tabData.TabContainer = TabContainer
 
-		local UIStroke = Instance.new("UIStroke")
+		--[[local UIStroke = Instance.new("UIStroke")
 		UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		UIStroke.BorderStrokePosition = Enum.BorderStrokePosition.Inner
 		UIStroke.Color = Library.Colors.UIStroke
 		UIStroke.Thickness = 2
 		UIStroke.Parent = TabContainer
 		UIStroke.Transparency = 1
-		tabData.TabContainer = TabContainer
+		tabData.TabContainer = TabContainer]]
 
 		local TabName = Instance.new("TextLabel")
 		TabName.Name = "TabName"
@@ -790,7 +1057,7 @@ function Library:CreateWindow(args)
 			SkinHolder.CanvasSize = UDim2.new(0.00, 0.00, 0.00, 0.00)
 			SkinHolder.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
 			SkinHolder.Size = UDim2.new(1.00, 10.00, 1.00, -40.00)
-			SkinHolder.ScrollBarImageColor3 = Color3.new(0.20, 0.21, 0.25)
+			SkinHolder.ScrollBarImageColor3 = Library.Colors.UIStroke
 			SkinHolder.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
 			SkinHolder.ScrollBarThickness = 2
 			SkinHolder.BackgroundTransparency = 1
@@ -844,10 +1111,11 @@ function Library:CreateWindow(args)
 
 			function SubTab:CreateSkin(args)
 				args = args or {}
-				local _GunName = args.GunName or "GunName"
+				local _GunName  = args.GunName or "GunName"
 				local _SkinName = args.SkinName or "SkinName"
 				local _SkinIcon = args.SkinIcon or "rbxassetid://1"
-				local _Rarity = args.Rarity or "Stock"
+				local _Rarity 	= args.Rarity or "Stock"
+				local _Flag     = args.Flag or (_GunName .. "_" .. _SkinName)
 				local _Callback = args.Callback or function() end
 
 				local RarityColor = Color3.fromRGB(195, 195, 195)
@@ -870,7 +1138,7 @@ function Library:CreateWindow(args)
 				SkinVariant.Size = UDim2.new(0.00, 100.00, 0.00, 100.00)
 				SkinVariant.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
 				SkinVariant.Text = ""
-				SkinVariant.BackgroundTransparency = 1
+				SkinVariant.BackgroundTransparency = 0.97
 				SkinVariant.Parent = SkinHolder
 				Skin.SkinVariant = SkinVariant
 
@@ -878,14 +1146,14 @@ function Library:CreateWindow(args)
 				UICorner_1.CornerRadius = UDim.new(0.00, 5.00)
 				UICorner_1.Parent = SkinVariant
 
-				local UIStroke_1 = Instance.new("UIStroke")
+				--[[local UIStroke_1 = Instance.new("UIStroke")
 				UIStroke_1.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 				UIStroke_1.BorderStrokePosition = Enum.BorderStrokePosition.Inner
 				UIStroke_1.Color = Color3.fromRGB(175, 188, 224)
 				UIStroke_1.Thickness = 2
 				UIStroke_1.Transparency = 0.95
 				UIStroke_1.Parent = SkinVariant
-				Skin.UIStroke_1 = UIStroke_1
+				Skin.UIStroke_1 = UIStroke_1]]
 
 				local SkinIcon = Instance.new("ImageLabel")
 				SkinIcon.Name = "SkinIcon"
@@ -981,47 +1249,79 @@ function Library:CreateWindow(args)
 				_Dots.Position = UDim2.new(0.00, 15.00, 0.00, 16.00)
 				_Dots.Parent = SkinVariant
 
-				SkinVariant.MouseButton1Click:Connect(function()
-					local PrevSkin = OneSkin and tabData.SelectedSkin or SubTab.SubTabSelectedSkin
-					if PrevSkin and PrevSkin ~= Skin then
-						PrevSkin.Selected = false
-						TweenService:Create(PrevSkin.UIStroke_1, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 0.95, Color = Color3.fromRGB(175, 188, 224) }):Play()
-						TweenService:Create(PrevSkin.SkinVariant, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 1, BackgroundColor3 = Color3.fromRGB(127, 135, 157) }):Play()
-						TweenService:Create(PrevSkin.SkinName, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextColor3 = Color3.fromRGB(135, 148, 183) }):Play()
-						TweenService:Create(PrevSkin.GunName, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextColor3 = Color3.fromRGB(135, 148, 183) }):Play()
+				Skin.Flag = _Flag
+
+				local function ApplyDeselect(s)
+					s.Selected = false
+					TweenService:Create(s.SkinVariant, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 0.97, BackgroundColor3 = Color3.fromRGB(127, 135, 157) }):Play()
+					TweenService:Create(s.SkinName, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextColor3 = Color3.fromRGB(135, 148, 183) }):Play()
+					TweenService:Create(s.GunName, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextColor3 = Color3.fromRGB(135, 148, 183) }):Play()
+				end
+
+				local function ApplySelect(s, color)
+					s.Selected = true
+					TweenService:Create(s.SkinVariant, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 0.91, BackgroundColor3 = color }):Play()
+					TweenService:Create(s.SkinName, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextColor3 = color }):Play()
+					TweenService:Create(s.GunName, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextColor3 = color }):Play()
+				end
+
+				function Skin:Deselect()
+					if not Skin.Selected then return end
+					ApplyDeselect(Skin)
+					Library.Flags[_Flag] = nil
+					if OneSkin and tabData.SelectedSkin == Skin then
+						tabData.SelectedSkin = nil
+						tabData.SelectedSkinSubTab = nil
+					elseif not OneSkin and SubTab.SubTabSelectedSkin == Skin then
+						SubTab.SubTabSelectedSkin = nil
 					end
+				end
+
+				function Skin:SetSkin(skipSave)
+					local PrevSkin = OneSkin and tabData.SelectedSkin or SubTab.SubTabSelectedSkin
+					if PrevSkin and PrevSkin ~= Skin then PrevSkin:Deselect() end
 
 					if OneSkin then
-						if tabData.SelectedSkinSubTab and tabData.SelectedSkinSubTab ~= SubTab then
-							tabData.SelectedSkinSubTab.SelectedSkin = nil
+						if tabData.SelectedSkinSubTab and tabData.SelectedSkinSubTab ~= SubTab
+						and tabData.SelectedSkinSubTab.SubTabSelectedSkin then
+							tabData.SelectedSkinSubTab.SubTabSelectedSkin:Deselect()
 						end
-
 						tabData.SelectedSkin = Skin
 						tabData.SelectedSkinSubTab = SubTab
 					else
 						SubTab.SubTabSelectedSkin = Skin
 					end
 
-					Skin.Selected = true
-					TweenService:Create(UIStroke_1, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 0.85, Color = RarityColor }):Play()
-					TweenService:Create(SkinVariant, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 0.91, BackgroundColor3 = RarityColor }):Play()
-					TweenService:Create(SkinName, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextColor3 = RarityColor }):Play()
-					TweenService:Create(GunName, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextColor3 = RarityColor }):Play()
+					ApplySelect(Skin, RarityColor)
 
+					if not skipSave then
+						Library.Flags[_Flag] = true
+					end
 					_Callback(_GunName, _SkinName)
+				end
+
+				SkinVariant.MouseButton1Click:Connect(function()
+					Skin:SetSkin(false)
 				end)
 
 				SkinVariant.MouseEnter:Connect(function()
 					if not Skin.Selected then
-						TweenService:Create(UIStroke_1, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 0.85 }):Play()
-						TweenService:Create(SkinVariant, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 0.91 }):Play()
+						TweenService:Create(SkinVariant, TweenInfo.new(0.15), { Transparency = 0.95 }):Play()
 					end
 				end)
 
 				SkinVariant.MouseLeave:Connect(function()
 					if not Skin.Selected then
-						TweenService:Create(UIStroke_1, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 0.95 }):Play()
-						TweenService:Create(SkinVariant, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 1 }):Play()
+						TweenService:Create(SkinVariant, TweenInfo.new(0.15), { Transparency = 0.97 }):Play()
+					end
+				end)
+
+				--// Register flag with the config system
+				Library:RegisterFlag(_Flag, function(value)
+					if value then
+						Skin:SetSkin(true)   -- skipSave = true (we're the ones applying the value)
+					else
+						Skin:Deselect()
 					end
 				end)
 
@@ -1042,7 +1342,7 @@ function Library:CreateWindow(args)
 				SubTabContainer.Visible = true
 
 				TweenService:Create(TabName, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.new(1, -40, 1, -2), TextColor3 = Library.Colors.AccentText }):Play()
-				TweenService:Create(UIStroke, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 0 }):Play()
+				--TweenService:Create(UIStroke, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 0 }):Play()
 				TweenService:Create(OpenIcon, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Rotation = 0, Position = UDim2.new(1.00, -18.00, 0.50, 0.00), ImageColor3 = Library.Colors.AccentText }):Play()
 				TweenService:Create(TabContainer, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 0.5 }):Play()
 
@@ -1056,7 +1356,7 @@ function Library:CreateWindow(args)
 				end
 			else
 				TweenService:Create(TabName, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.new(1, 0, 1, -2), TextColor3 = Library.Colors.UIStroke }):Play()
-				TweenService:Create(UIStroke, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 1 }):Play()
+				--TweenService:Create(UIStroke, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 1 }):Play()
 				TweenService:Create(OpenIcon, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Rotation = 90, Position = UDim2.new(1.00, 0, 0.50, 0.00), ImageColor3 = Library.Colors.UIStroke }):Play()
 				TweenService:Create(TabContainer, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 1 }):Play()
 
@@ -1100,6 +1400,620 @@ function Library:CreateWindow(args)
 		return tabData
 	end
 	
+	function Window:CreateConfigWindow()
+		local ConfigWindow = {}
+
+		local ConfigTabContainer = Instance.new("Frame")
+		ConfigTabContainer.Name = "ConfigTabContainer"
+		ConfigTabContainer.Size = UDim2.new(0.00, 226.00, 0.00, 357.00)
+		ConfigTabContainer.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		ConfigTabContainer.Position = UDim2.new(0.50, (Window.MainUI.Position.X.Offset + Window.MainUI.Size.X.Offset / 2) + 4, 0.50, -250.00)
+		ConfigTabContainer.BorderSizePixel = 0
+		ConfigTabContainer.BackgroundColor3 = Library.Colors.DarkBackground
+		ConfigTabContainer.Parent = ScreenGui
+
+		local UICorner = Instance.new("UICorner")
+		UICorner.CornerRadius = UDim.new(0.00, 10.00)
+		UICorner.Parent = ConfigTabContainer
+
+		local UIGlow = Instance.new("ImageLabel")
+		UIGlow.Name = "UIGlow"
+		UIGlow.BorderSizePixel = 0
+		UIGlow.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+		UIGlow.AnchorPoint = Vector2.new(0.50, 0.50)
+		UIGlow.Image = getcustomasset(Library.Folders[2] .. "/" .. "ConfigBackgroundGlow.png")
+		UIGlow.Size = UDim2.new(1.00, 0.00, 1.00, 0.00)
+		UIGlow.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		UIGlow.BackgroundTransparency = 1
+		UIGlow.Position = UDim2.new(0.50, 0.00, 0.50, 0.00)
+		UIGlow.Parent = ConfigTabContainer
+
+		local MainHolder = Instance.new("Frame")
+		MainHolder.Name = "MainHolder"
+		MainHolder.AnchorPoint = Vector2.new(0.50, 0.50)
+		MainHolder.Size = UDim2.new(1.00, 0.00, 1.00, 0.00)
+		MainHolder.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		MainHolder.Position = UDim2.new(0.50, 0.00, 0.50, 0.00)
+		MainHolder.BorderSizePixel = 0
+		MainHolder.BackgroundTransparency = 1
+		MainHolder.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+		MainHolder.Parent = ConfigTabContainer
+
+		local UIPadding = Instance.new("UIPadding")
+		UIPadding.PaddingBottom = UDim.new(0.00, 20.00)
+		UIPadding.PaddingTop = UDim.new(0.00, 20.00)
+		UIPadding.PaddingLeft = UDim.new(0.00, 20.00)
+		UIPadding.PaddingRight = UDim.new(0.00, 20.00)
+		UIPadding.Parent = MainHolder
+
+		local ConfigContainerHolder = Instance.new("Frame")
+		ConfigContainerHolder.Name = "ConfigContainerHolder"
+		ConfigContainerHolder.Size = UDim2.new(0.00, 186.00, 0.00, 159.00)
+		ConfigContainerHolder.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		ConfigContainerHolder.BorderSizePixel = 0
+		ConfigContainerHolder.BackgroundTransparency = 0.1
+		ConfigContainerHolder.BackgroundColor3 = Color3.new(0.07, 0.07, 0.09)
+		ConfigContainerHolder.Parent = MainHolder
+
+		local UICorner_1 = Instance.new("UICorner")
+		UICorner_1.CornerRadius = UDim.new(0.00, 5.00)
+		UICorner_1.Parent = ConfigContainerHolder
+
+		local UIStroke = Instance.new("UIStroke")
+		UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		UIStroke.Color = Color3.new(0.04, 0.05, 0.05)
+		UIStroke.Thickness = 2
+		UIStroke.Transparency = 0.69
+		UIStroke.Parent = ConfigContainerHolder
+
+		local UIPadding_1 = Instance.new("UIPadding")
+		UIPadding_1.PaddingBottom = UDim.new(0.00, 6.00)
+		UIPadding_1.PaddingTop = UDim.new(0.00, 6.00)
+		UIPadding_1.PaddingLeft = UDim.new(0.00, 6.00)
+		UIPadding_1.PaddingRight = UDim.new(0.00, 6.00)
+		UIPadding_1.Parent = ConfigContainerHolder
+
+		local ConfigContainer = Instance.new("ScrollingFrame")
+		ConfigContainer.Name = "ConfigContainer"
+		ConfigContainer.Active = true
+		ConfigContainer.ScrollingDirection = Enum.ScrollingDirection.Y
+		ConfigContainer.BorderSizePixel = 0
+		ConfigContainer.CanvasSize = UDim2.new(0.00, 0.00, 0.00, 0.00)
+		ConfigContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		ConfigContainer.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+		ConfigContainer.Size = UDim2.new(1.00, 0.00, 1.00, 0.00)
+		ConfigContainer.ScrollBarImageColor3 = Library.Colors.UIStroke
+		ConfigContainer.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		ConfigContainer.ScrollBarThickness = 2
+		ConfigContainer.BackgroundTransparency = 1
+		ConfigContainer.Parent = ConfigContainerHolder
+
+		local UIPadding_1 = Instance.new("UIPadding")
+		UIPadding_1.PaddingRight = UDim.new(0.00, 6.00)
+		UIPadding_1.Parent = ConfigContainer
+
+		local UIListLayout = Instance.new("UIListLayout")
+		UIListLayout.Padding = UDim.new(0.00, 4.00)
+		UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		UIListLayout.Parent = ConfigContainer
+
+		local Config = Instance.new("TextButton")
+		Config.Name = "Config"
+		Config.BorderSizePixel = 0
+		Config.BackgroundColor3 = Color3.fromRGB(127, 135, 157)
+		Config.Size = UDim2.new(1.00, -6.00, 0.00, 26.00)
+		Config.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		Config.Text = ""
+		Config.BackgroundTransparency = 0.97
+		Config.Parent = ConfigContainer
+
+		local ConfigName = Instance.new("TextLabel")
+		ConfigName.Name = "ConfigName"
+		ConfigName.Active = true
+		ConfigName.TextTruncate = Enum.TextTruncate.SplitWord
+		ConfigName.BorderSizePixel = 0
+		ConfigName.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+		ConfigName.FontFace = gilroySemiBold
+		ConfigName.AnchorPoint = Vector2.new(0.50, 1.00)
+		ConfigName.TextXAlignment = Enum.TextXAlignment.Left
+		ConfigName.TextSize = 13
+		ConfigName.Size = UDim2.new(1.00, -12.00, 1.00, -2.00)
+		ConfigName.Selectable = true
+		ConfigName.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		ConfigName.Text = "Config Name"
+		ConfigName.TextColor3 = Library.Colors.UIStroke
+		ConfigName.BackgroundTransparency = 1
+		ConfigName.Position = UDim2.new(0.50, 0.00, 1.00, 0.00)
+		ConfigName.Parent = Config
+
+		local ConfigNamePadding = Instance.new("UIPadding")
+		ConfigNamePadding.Name = "ConfigNamePadding"
+		ConfigNamePadding.PaddingTop = UDim.new(0.00, 5.00)
+		ConfigNamePadding.Parent = ConfigName
+
+		local UICorner_1 = Instance.new("UICorner")
+		UICorner_1.CornerRadius = UDim.new(0.00, 2.00)
+		UICorner_1.Parent = Config
+
+		local ButtonsHolder = Instance.new("Frame")
+		ButtonsHolder.Name = "ButtonsHolder"
+		ButtonsHolder.Size = UDim2.new(0.00, 186.00, 0.00, 138.00)
+		ButtonsHolder.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		ButtonsHolder.Position = UDim2.new(0.00, 0.00, 0.00, 179.00)
+		ButtonsHolder.BorderSizePixel = 0
+		ButtonsHolder.BackgroundTransparency = 1
+		ButtonsHolder.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+		ButtonsHolder.Parent = MainHolder
+
+		local UIListLayout_1 = Instance.new("UIListLayout")
+		UIListLayout_1.Padding = UDim.new(0.00, 2.00)
+		UIListLayout_1.Parent = ButtonsHolder
+
+		local _ConfigNameHolder = Instance.new("Frame")
+		_ConfigNameHolder.Name = "1ConfigNameHolder"
+		_ConfigNameHolder.Size = UDim2.new(0.00, 186.00, 0.00, 26.00)
+		_ConfigNameHolder.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		_ConfigNameHolder.BorderSizePixel = 0
+		_ConfigNameHolder.BackgroundTransparency = 0.10000000149011612
+		_ConfigNameHolder.BackgroundColor3 = Color3.new(0.07, 0.07, 0.09)
+		_ConfigNameHolder.Parent = ButtonsHolder
+
+		local UICorner_1 = Instance.new("UICorner")
+		UICorner_1.CornerRadius = UDim.new(0.00, 5.00)
+		UICorner_1.Parent = _ConfigNameHolder
+
+		local UIStroke_1 = Instance.new("UIStroke")
+		UIStroke_1.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		UIStroke_1.Color = Color3.new(0.04, 0.05, 0.05)
+		UIStroke_1.Thickness = 2
+		UIStroke_1.Transparency = 0.69
+		UIStroke_1.Parent = _ConfigNameHolder
+
+		local ConfigName_1 = Instance.new("TextBox")
+		ConfigName_1.Name = "ConfigName"
+		ConfigName_1.TextTruncate = Enum.TextTruncate.SplitWord
+		ConfigName_1.BorderSizePixel = 0
+		ConfigName_1.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+		ConfigName_1.FontFace = gilroySemiBold
+		ConfigName_1.AnchorPoint = Vector2.new(0.50, 1.00)
+		ConfigName_1.TextSize = 13
+		ConfigName_1.Size = UDim2.new(1.00, -24.00, 1.00, -2.00)
+		ConfigName_1.TextColor3 = Library.Colors.AccentText
+		ConfigName_1.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		ConfigName_1.Text = ""
+		ConfigName_1.TextXAlignment = Enum.TextXAlignment.Left
+		ConfigName_1.BackgroundTransparency = 1
+		ConfigName_1.Position = UDim2.new(0.50, 0.00, 1.00, 0.00)
+		ConfigName_1.Parent = _ConfigNameHolder
+
+		local UIPadding_1 = Instance.new("UIPadding")
+		UIPadding_1.PaddingTop = UDim.new(0.00, 5.00)
+		UIPadding_1.Parent = ConfigName_1
+
+		local _AddConfigButton = Instance.new("TextButton")
+		_AddConfigButton.Name = "2AddConfigButton"
+		_AddConfigButton.BorderSizePixel = 0
+		_AddConfigButton.BackgroundColor3 = Color3.fromRGB(127, 135, 157)
+		_AddConfigButton.Size = UDim2.new(0.00, 186.00, 0.00, 26.00)
+		_AddConfigButton.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		_AddConfigButton.Text = ""
+		_AddConfigButton.BackgroundTransparency = 0.97
+		_AddConfigButton.Parent = ButtonsHolder
+
+		local Name = Instance.new("TextLabel")
+		Name.Name = "Name"
+		Name.Active = true
+		Name.TextTruncate = Enum.TextTruncate.SplitWord
+		Name.BorderSizePixel = 0
+		Name.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+		Name.FontFace = gilroySemiBold
+		Name.AnchorPoint = Vector2.new(0.50, 1.00)
+		Name.TextXAlignment = Enum.TextXAlignment.Left
+		Name.TextSize = 13
+		Name.Size = UDim2.new(1.00, -24.00, 1.00, -2.00)
+		Name.Selectable = true
+		Name.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		Name.Text = "Add Config"
+		Name.TextColor3 = Library.Colors.UIStroke
+		Name.BackgroundTransparency = 1
+		Name.Position = UDim2.new(0.50, 0.00, 1.00, 0.00)
+		Name.Parent = _AddConfigButton
+
+		local UIPadding_1 = Instance.new("UIPadding")
+		UIPadding_1.PaddingTop = UDim.new(0.00, 5.00)
+		UIPadding_1.Parent = Name
+
+		local UICorner_1 = Instance.new("UICorner")
+		UICorner_1.CornerRadius = UDim.new(0.00, 5.00)
+		UICorner_1.Parent = _AddConfigButton
+
+		local _LoadConfigButton = Instance.new("TextButton")
+		_LoadConfigButton.Name = "3LoadConfigButton"
+		_LoadConfigButton.BorderSizePixel = 0
+		_LoadConfigButton.BackgroundColor3 = Color3.fromRGB(127, 135, 157)
+		_LoadConfigButton.Size = UDim2.new(0.00, 186.00, 0.00, 26.00)
+		_LoadConfigButton.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		_LoadConfigButton.Text = ""
+		_LoadConfigButton.BackgroundTransparency = 0.97
+		_LoadConfigButton.Parent = ButtonsHolder
+
+		local Name_1 = Instance.new("TextLabel")
+		Name_1.Name = "Name"
+		Name_1.Active = true
+		Name_1.TextTruncate = Enum.TextTruncate.SplitWord
+		Name_1.BorderSizePixel = 0
+		Name_1.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+		Name_1.FontFace = gilroySemiBold
+		Name_1.AnchorPoint = Vector2.new(0.50, 1.00)
+		Name_1.TextXAlignment = Enum.TextXAlignment.Left
+		Name_1.TextSize = 13
+		Name_1.Size = UDim2.new(1.00, -24.00, 1.00, -2.00)
+		Name_1.Selectable = true
+		Name_1.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		Name_1.Text = "Load Config"
+		Name_1.TextColor3 = Library.Colors.UIStroke
+		Name_1.BackgroundTransparency = 1
+		Name_1.Position = UDim2.new(0.50, 0.00, 1.00, 0.00)
+		Name_1.Parent = _LoadConfigButton
+
+		local UIPadding_1 = Instance.new("UIPadding")
+		UIPadding_1.PaddingTop = UDim.new(0.00, 5.00)
+		UIPadding_1.Parent = Name_1
+
+		local UICorner_1 = Instance.new("UICorner")
+		UICorner_1.CornerRadius = UDim.new(0.00, 5.00)
+		UICorner_1.Parent = _LoadConfigButton
+
+		local _DeleteConfigButton = Instance.new("TextButton")
+		_DeleteConfigButton.Name = "4DeleteConfigButton"
+		_DeleteConfigButton.BorderSizePixel = 0
+		_DeleteConfigButton.BackgroundColor3 = Color3.fromRGB(127, 135, 157)
+		_DeleteConfigButton.Size = UDim2.new(0.00, 186.00, 0.00, 26.00)
+		_DeleteConfigButton.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		_DeleteConfigButton.Text = ""
+		_DeleteConfigButton.BackgroundTransparency = 0.97
+		_DeleteConfigButton.Parent = ButtonsHolder
+
+		local Name_1 = Instance.new("TextLabel")
+		Name_1.Name = "Name"
+		Name_1.Active = true
+		Name_1.TextTruncate = Enum.TextTruncate.SplitWord
+		Name_1.BorderSizePixel = 0
+		Name_1.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+		Name_1.FontFace = gilroySemiBold
+		Name_1.AnchorPoint = Vector2.new(0.50, 1.00)
+		Name_1.TextXAlignment = Enum.TextXAlignment.Left
+		Name_1.TextSize = 13
+		Name_1.Size = UDim2.new(1.00, -24.00, 1.00, -2.00)
+		Name_1.Selectable = true
+		Name_1.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		Name_1.Text = "Delete Config"
+		Name_1.TextColor3 = Library.Colors.UIStroke
+		Name_1.BackgroundTransparency = 1
+		Name_1.Position = UDim2.new(0.50, 0.00, 1.00, 0.00)
+		Name_1.Parent = _DeleteConfigButton
+
+		local UIPadding_1 = Instance.new("UIPadding")
+		UIPadding_1.PaddingTop = UDim.new(0.00, 5.00)
+		UIPadding_1.Parent = Name_1
+
+		local UICorner_1 = Instance.new("UICorner")
+		UICorner_1.CornerRadius = UDim.new(0.00, 5.00)
+		UICorner_1.Parent = _DeleteConfigButton
+
+		local _AutoLoadToggle = Instance.new("TextButton")
+		_AutoLoadToggle.Name = "5AutoLoadToggle"
+		_AutoLoadToggle.BorderSizePixel = 0
+		_AutoLoadToggle.BackgroundColor3 = Color3.fromRGB(127, 135, 157)
+		_AutoLoadToggle.Size = UDim2.new(0.00, 26.00, 0.00, 26.00)
+		_AutoLoadToggle.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		_AutoLoadToggle.Text = ""
+		_AutoLoadToggle.BackgroundTransparency = 0.97
+		_AutoLoadToggle.Parent = ButtonsHolder
+
+		local Text = Instance.new("TextLabel")
+		Text.Name = "Text"
+		Text.Active = true
+		Text.TextTruncate = Enum.TextTruncate.SplitWord
+		Text.BorderSizePixel = 0
+		Text.BackgroundColor3 = Color3.new(1.00, 1.00, 1.00)
+		Text.FontFace = gilroySemiBold
+		Text.AnchorPoint = Vector2.new(0.00, 0.50)
+		Text.TextXAlignment = Enum.TextXAlignment.Left
+		Text.TextSize = 13
+		Text.Size = UDim2.new(0.00, 148.00, 1.00, 0.00)
+		Text.Selectable = true
+		Text.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		Text.Text = "Auto Load"
+		Text.TextColor3 = Library.Colors.UIStroke
+		Text.BackgroundTransparency = 1
+		Text.Position = UDim2.new(0.00, 38.00, 0.50, 0.00)
+		Text.Parent = _AutoLoadToggle
+
+		local UIPadding_1 = Instance.new("UIPadding")
+		UIPadding_1.PaddingTop = UDim.new(0.00, 5.00)
+		UIPadding_1.Parent = Text
+
+		local ToggleFill = Instance.new("Frame")
+		ToggleFill.Name = "ToggleFill"
+		ToggleFill.AnchorPoint = Vector2.new(0.50, 0.50)
+		ToggleFill.Size = UDim2.new(1.00, -4.00, 1.00, -4.00)
+		ToggleFill.BorderColor3 = Color3.new(0.00, 0.00, 0.00)
+		ToggleFill.Position = UDim2.new(0.50, 0.00, 0.50, 0.00)
+		ToggleFill.BorderSizePixel = 0
+		ToggleFill.BackgroundColor3 = Library.Colors.AccentText
+		ToggleFill.Parent = _AutoLoadToggle
+
+		local UICorner_1 = Instance.new("UICorner")
+		UICorner_1.CornerRadius = UDim.new(0.00, 5.00)
+		UICorner_1.Parent = ToggleFill
+
+		local UICorner_1 = Instance.new("UICorner")
+		UICorner_1.CornerRadius = UDim.new(0.00, 5.00)
+		UICorner_1.Parent = _AutoLoadToggle
+
+		function ConfigWindow:Open()
+			ConfigTabContainer.Visible = true
+		end
+
+		function ConfigWindow:Close()
+			ConfigTabContainer.Visible = false
+		end
+
+		local TWEEN_INFO   = TweenInfo.new(0.15)
+
+		local function Tween(obj, props)
+			TweenService:Create(obj, TWEEN_INFO, props):Play()
+		end
+
+		-- References to the buttons + their text labels
+		local AddBtn        = _AddConfigButton
+		local AddBtnText    = AddBtn:FindFirstChild("Name")
+		local LoadBtn       = _LoadConfigButton
+		local LoadBtnText   = LoadBtn:FindFirstChild("Name")
+		local DeleteBtn     = _DeleteConfigButton
+		local DeleteBtnText = DeleteBtn:FindFirstChild("Name")
+		local ToggleBtn     = _AutoLoadToggle
+		local ToggleText    = ToggleBtn:FindFirstChild("Text")
+
+		-- State
+		local SelectedConfig = nil
+		local AddEnabled     = true
+		local ToggleState    = false
+		local ConfigButtons  = {}
+
+		-- Steal the template that lives inside ConfigContainer, then remove it
+		local configTemplate = Config:Clone()
+		Config:Destroy()
+
+		--==================================================================
+		--  TOGGLE
+		--==================================================================
+		local function SetToggleValue(value)
+			ToggleState = value
+			Tween(ToggleFill, { BackgroundTransparency = value and 0 or 1 })
+		end
+
+		--==================================================================
+		--  SELECT / DESELECT
+		--==================================================================
+		local function DeselectConfig()
+			if SelectedConfig then
+				local btn = ConfigButtons[SelectedConfig]
+				if btn and btn.Parent then
+					local label = btn:FindFirstChild("ConfigName")
+					Tween(btn,   { BackgroundTransparency = 0.97 })
+					Tween(label, { TextColor3 = Library.Colors.UIStroke })
+				end
+			end
+
+			SelectedConfig = nil
+			ConfigName_1.Text         = ""
+			ConfigName_1.TextEditable = true
+			AddEnabled = true
+			SetToggleValue(false)
+		end
+
+		local function SelectConfig(name)
+			if SelectedConfig == name then return end
+
+			-- Deselect the previous one
+			if SelectedConfig then
+				local prevBtn = ConfigButtons[SelectedConfig]
+				if prevBtn and prevBtn.Parent then
+					local prevLabel = prevBtn:FindFirstChild("ConfigName")
+					Tween(prevBtn,   { BackgroundTransparency = 0.97 })
+					Tween(prevLabel, { TextColor3 = Library.Colors.UIStroke })
+				end
+			end
+
+			SelectedConfig = name
+			local btn = ConfigButtons[name]
+			if not btn then return end
+
+			local label = btn:FindFirstChild("ConfigName")
+			Tween(btn,   { BackgroundTransparency = 0.91 })
+			Tween(label, { TextColor3 = Library.Colors.AccentText })
+
+			-- Lock the textbox + disable add
+			ConfigName_1.Text         = name
+			ConfigName_1.TextEditable = false
+
+			AddEnabled = false
+			Tween(AddBtn,     { BackgroundTransparency = 0.97 })
+			Tween(AddBtnText, { TextColor3 = Library.Colors.UIStroke })
+
+			-- Sync toggle to this config's auto-load state
+			SetToggleValue(Library:IsAutoLoad(name))
+		end
+
+		--==================================================================
+		--  CONFIG LIST BUTTONS
+		--==================================================================
+		local function CreateConfigButton(configName, order)
+			local btn = configTemplate:Clone()
+			btn.Name                   = configName
+			btn.LayoutOrder            = order
+			btn.BackgroundTransparency = 0.97
+			btn.Parent                 = ConfigContainer
+
+			local label = btn:FindFirstChild("ConfigName")
+			label.Text       = configName
+			label.TextColor3 = Library.Colors.UIStroke
+
+			ConfigButtons[configName] = btn
+
+			-- Hover only fires when this button isn't the currently selected one
+			btn.MouseEnter:Connect(function()
+				if SelectedConfig == configName then return end
+				Tween(btn,   { BackgroundTransparency = 0.95 })
+				Tween(label, { TextColor3 = Library.Colors.HoverText })
+			end)
+			btn.MouseLeave:Connect(function()
+				if SelectedConfig == configName then return end
+				Tween(btn,   { BackgroundTransparency = 0.97 })
+				Tween(label, { TextColor3 = Library.Colors.UIStroke })
+			end)
+
+			btn.MouseButton1Click:Connect(function()
+				if SelectedConfig == configName then
+					DeselectConfig()            -- clicking the active one deselects
+				else
+					SelectConfig(configName)
+				end
+			end)
+		end
+
+		local function RefreshConfigList()
+			for _, btn in pairs(ConfigButtons) do
+				btn:Destroy()
+			end
+			ConfigButtons = {}
+
+			local list = Library:ListConfigs()
+			for i, cfg in ipairs(list) do
+				CreateConfigButton(cfg.Name, i)
+			end
+		end
+
+		--==================================================================
+		--  BASIC BUTTON ANIMATIONS (Add / Load / Delete)
+		--==================================================================
+		local function SetupBasicButton(button, textLabel, isEnabledFn)
+			button.MouseEnter:Connect(function()
+				if isEnabledFn and not isEnabledFn() then return end
+				Tween(button,    { BackgroundTransparency = 0.95 })
+				Tween(textLabel, { TextColor3 = Library.Colors.HoverText })
+			end)
+			button.MouseLeave:Connect(function()
+				Tween(button,    { BackgroundTransparency = 0.97 })
+				Tween(textLabel, { TextColor3 = Library.Colors.UIStroke })
+			end)
+			button.MouseButton1Down:Connect(function()
+				if isEnabledFn and not isEnabledFn() then return end
+				Tween(button, { BackgroundTransparency = 0.91 })
+			end)
+			button.MouseButton1Up:Connect(function()
+				if isEnabledFn and not isEnabledFn() then return end
+				Tween(button, { BackgroundTransparency = 0.95 })
+			end)
+		end
+
+		SetupBasicButton(AddBtn,    AddBtnText,    function() return AddEnabled end)
+		SetupBasicButton(LoadBtn,   LoadBtnText)
+		SetupBasicButton(DeleteBtn, DeleteBtnText)
+
+		--==================================================================
+		--  TOGGLE HOVER ANIMATIONS
+		--==================================================================
+		ToggleBtn.MouseEnter:Connect(function()
+			if ToggleState then return end
+			Tween(ToggleBtn,  { BackgroundTransparency = 0.95 })
+			Tween(ToggleText, { TextColor3 = Library.Colors.HoverText })
+		end)
+		ToggleBtn.MouseLeave:Connect(function()
+			if ToggleState then return end
+			Tween(ToggleBtn,  { BackgroundTransparency = 0.97 })
+			Tween(ToggleText, { TextColor3 = Library.Colors.UIStroke })
+		end)
+		ToggleBtn.MouseButton1Down:Connect(function()
+			if ToggleState then return end
+			Tween(ToggleBtn, { BackgroundTransparency = 0.91 })
+		end)
+		ToggleBtn.MouseButton1Up:Connect(function()
+			if ToggleState then return end
+			Tween(ToggleBtn, { BackgroundTransparency = 0.95 })
+		end)
+
+		--==================================================================
+		--  ACTION HANDLERS
+		--==================================================================
+
+		-- Add Config
+		AddBtn.MouseButton1Click:Connect(function()
+			if not AddEnabled then return end
+			local name = ConfigName_1.Text
+			if name == "" then return end
+
+			local ok = Library:SaveConfig(name)
+			if ok then
+				RefreshConfigList()
+			end
+		end)
+
+		-- Load Config
+		LoadBtn.MouseButton1Click:Connect(function()
+			if not SelectedConfig then return end
+			Library:LoadConfig(SelectedConfig)
+		end)
+
+		-- Delete Config
+		DeleteBtn.MouseButton1Click:Connect(function()
+			if not SelectedConfig then return end
+			Library:DeleteConfig(SelectedConfig)
+			RefreshConfigList()   -- rebuild (old button destroyed)
+			DeselectConfig()      -- safe, no-op if button gone
+		end)
+
+		-- Toggle Auto Load
+		ToggleBtn.MouseButton1Click:Connect(function()
+			if not SelectedConfig then return end
+
+			local newValue = not ToggleState
+			SetToggleValue(newValue)
+
+			if newValue then
+				Library:SetAutoLoad(SelectedConfig)
+			else
+				if Library:IsAutoLoad(SelectedConfig) then
+					Library:DisableAutoLoad()
+				end
+			end
+		end)
+
+		--==================================================================
+		--  OPEN / CLOSE (fixed — original never flipped `state`)
+		--==================================================================
+		RefreshConfigList()
+		SetToggleValue(false)
+		ConfigWindow:Close()
+
+		local state = false
+		ConfigToggle.MouseButton1Click:Connect(function()
+			state = not state
+			if state then
+				RefreshConfigList()   -- keep list fresh on open
+				ConfigWindow:Open()
+			else
+				ConfigWindow:Close()
+			end
+		end)
+
+		return ConfigWindow
+	end
+
+	local ConfigWindow = Window:CreateConfigWindow()
+
 	return Window
 end
 
